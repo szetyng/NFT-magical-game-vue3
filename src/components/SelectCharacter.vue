@@ -5,7 +5,7 @@
 			<div class="character-grid" v-if="characters.length > 0">
 				<!-- renderCharacters -->
 				<div
-					v-for="character in characters"
+					v-for="(character, characterID) in characters"
 					:key="character.name"
 					class="character-item"
 				>
@@ -13,7 +13,11 @@
 						<p>{{ character.name }}</p>
 					</div>
 					<img :src="character.imageURI" alt="character.name" />
-					<button type="button" class="character-mint-button">
+					<button
+						type="button"
+						class="character-mint-button"
+						@click="mintCharacter(characterID)"
+					>
 						Mint {{ character.name }}
 					</button>
 				</div>
@@ -34,7 +38,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, onMounted, ref, watchEffect } from "vue";
+import { defineComponent, ref, watchEffect } from "vue";
 import { ethers } from "ethers";
 
 import { CONTRACT_ADDRESS, transformCharacterData } from "../constants";
@@ -46,34 +50,35 @@ declare let window: any;
 
 export default defineComponent({
 	name: "SelectCharacter",
-	setup() {
+	setup(props, { emit }) {
 		let gameContract = ref();
 		let characters = ref([]);
 		let mintingCharacter = ref(false);
 
-		onMounted(() => {
-			console.log("getting game contract");
-			const { ethereum } = window;
+		// Getting game contract using the ethereum object from window + ABI file
+		console.log("getting game contract");
+		const { ethereum } = window;
 
-			if (ethereum) {
-				const provider = new ethers.providers.Web3Provider(ethereum);
-				const signer = provider.getSigner();
-				const gameContractLocal = new ethers.Contract(
-					CONTRACT_ADDRESS,
-					myEpicGame.abi,
-					signer
-				);
-				console.log("game contract");
-				console.log(gameContractLocal);
+		if (ethereum) {
+			const provider = new ethers.providers.Web3Provider(ethereum);
+			const signer = provider.getSigner();
+			const gameContractLocal = new ethers.Contract(
+				CONTRACT_ADDRESS,
+				myEpicGame.abi,
+				signer
+			);
 
-				// This is the big difference. Set our gameContract in state.
-				gameContract.value = gameContractLocal;
-			} else {
-				console.log("Ethereum object not found");
-			}
-		});
+			// This is the big difference. Set our gameContract in state.
+			gameContract.value = gameContractLocal;
+		} else {
+			console.log("Ethereum object not found");
+		}
 
-		watchEffect(async () => {
+		/**
+		 * Get character NFTs metadata from the smart contract and
+		 * display them on the template
+		 */
+		const getCharacters = async () => {
 			try {
 				console.log("Getting contract characters to mint");
 
@@ -87,16 +92,73 @@ export default defineComponent({
 					(characterData: CharacterNFT) => transformCharacterData(characterData)
 				);
 
-				// Set all mint-able characters in state -> will be displayedin template
+				// Set all mint-able characters in state -> will be displayed in template
 				characters.value = charactersLocal;
 			} catch (error) {
 				console.error("Something went wrong fetching characters:", error);
 			}
+		};
+
+		/**
+		 * Mint character for user based on the character ID chosen (button click)
+		 */
+		const mintCharacter = async (characterID: number) => {
+			try {
+				if (gameContract.value) {
+					mintingCharacter.value = true;
+					console.log("Minting character in progress...");
+
+					const mintTxn = await gameContract.value.mintCharacterNFT(
+						characterID
+					);
+					await mintTxn.wait();
+
+					console.log("mintTxn:", mintTxn);
+					mintingCharacter.value = false;
+				}
+			} catch (error) {
+				console.warn("MintCharacterAction error:", error);
+				mintingCharacter.value = false;
+			}
+		};
+
+		/**
+		 * Function that triggers after CharacterNFTMinted event was fired in the game contract
+		 */
+		const onCharacterMint = async (
+			sender: string,
+			tokenId: number,
+			characterId: number
+		) => {
+			console.log(
+				`CharacterNFTMinted - sender: ${sender} tokenId: ${tokenId} characterIndex: ${characterId}`
+			);
+			alert(
+				`Your NFT is all done -- see it here: https://testnets.opensea.io/assets/${CONTRACT_ADDRESS}/${tokenId}`
+			);
+
+			if (gameContract.value) {
+				const characterNFTLocal = await gameContract.value.checkIfUserHasNFT();
+				console.log("CharacterNFT:", characterNFTLocal);
+				emit("on-character-mint", transformCharacterData(characterNFTLocal));
+				// characterNFT.value = transformCharacterData(characterNFTLocal);
+			}
+		};
+
+		// Runs when something within it changes -> gameContract
+		// When game contract is ready, retrieve character data and setup
+		// event listener
+		watchEffect(async () => {
+			if (!gameContract.value) return;
+
+			getCharacters();
+			gameContract.value.on("CharacterNFTMinted", onCharacterMint);
 		});
 
 		return {
 			characters,
 			mintingCharacter,
+			mintCharacter,
 		};
 	},
 });

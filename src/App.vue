@@ -25,10 +25,14 @@
 					</div>
 				</div>
 
-				<div v-else-if="currentAccount && characterNFT">
-					<SelectCharacter />
+				<div
+					v-else-if="currentAccount && Object.keys(characterNFT).length == 0"
+				>
+					<SelectCharacter @on-character-mint="onCharacterMint" />
 				</div>
-				<div v-else-if="currentAccount && !characterNFT">hehe</div>
+				<div v-else-if="currentAccount && Object.keys(characterNFT).length > 0">
+					<Arena :characterNFT="characterNFT" />
+				</div>
 
 				<div v-else>Error</div>
 			</div>
@@ -60,6 +64,8 @@ import { CONTRACT_ADDRESS, transformCharacterData } from "./constants";
 import myEpicGame from "./utils/MyEpicGame.json";
 
 import SelectCharacter from "./components/SelectCharacter.vue";
+import Arena from "./components/Arena.vue";
+import { CharacterNFT } from "./types/character";
 
 declare let window: any;
 
@@ -71,6 +77,7 @@ export default defineComponent({
 	name: "App",
 	components: {
 		SelectCharacter,
+		Arena,
 	},
 
 	setup() {
@@ -79,6 +86,8 @@ export default defineComponent({
 		let characterNFT = ref({});
 		let isLoading = ref(false);
 
+		// Alternative for async code to run in created, not mounted
+		// https://stackoverflow.com/a/67525124/11075176
 		onMounted(async () => {
 			await connectToWallet();
 		});
@@ -167,7 +176,10 @@ export default defineComponent({
 
 		// If user has NFT, show Arena to fight the Boss
 
-		// If use does not have NFT, allow them to select characters
+		// If user has just minted NFT
+		const onCharacterMint = (newCharNFT: CharacterNFT) => {
+			characterNFT.value = newCharNFT;
+		};
 
 		// const goals = ref([]);
 
